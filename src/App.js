@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect} from 'react';
 
 const getData = async word => {
   const response = await fetch(`/.netlify/functions/index?query=${word}`);
@@ -12,8 +12,7 @@ const getComputerMove = async word => {
   const response = await fetch(
     `/.netlify/functions/index?query=${word}&computerTurn=true`,
   );
-
-  return response.text();
+  return response.json();
 };
 
 const App = () => {
@@ -21,34 +20,42 @@ const App = () => {
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(true);
   const [resultCount, setResultCount] = useState(0);
-  const [currentPlayer, setCurrentPlayer] = useState('player');
-
-  const inputEl = useRef(null);
+  const [currentPlayer, setCurrentPlayer] = useState('loading');
 
   // When data updates, set loading to false, update the result count, and set the text box to empty
   useEffect(
     () => {
-      getData(result).then(data => {
-        if (data) {
-          setResultCount(data.length);
-          setLoading(false);
-          setInputValue('');
-        }
-      });
+      if (currentPlayer === 'loading' || currentPlayer === 'playerSubmitting') {
+        getData(result).then(data => {
+          if (data) {
+            setResultCount(data.length);
+
+            if (currentPlayer === 'loading') {
+              setLoading(false);
+              setCurrentPlayer('playerStart');
+            } else {
+              setCurrentPlayer('playerEnd');
+              setInputValue('');
+            }
+          }
+        });
+      }
     },
-    [result],
+    [result, currentPlayer],
   );
 
   // Tells the server to start calculating the computers move if it is the computers turn.
   // Posts the computer result to the result state, allows the player to continue playing.
   useEffect(
     () => {
-      if (currentPlayer === 'computer') {
-        setCurrentPlayer('');
-        getComputerMove(result).then(guess => {
+      if (currentPlayer === 'computerStart') {
+        setCurrentPlayer('computerSubmitting');
+
+        getComputerMove(result).then(({guess, body}) => {
+          const results = JSON.parse(body);
+          setResultCount(results.length);
           setResult(result + guess);
-          setCurrentPlayer('player');
-          inputEl && inputEl.current && inputEl.current.focus();
+          setCurrentPlayer('computerEnd');
         });
       }
     },
@@ -60,7 +67,12 @@ const App = () => {
   const handleChange = async event => {
     setInputValue(event.target.value);
     setResult(result + event.target.value);
-    setCurrentPlayer('computer');
+    setCurrentPlayer('playerSubmitting');
+  };
+
+  const handleEndTurn = () => {
+    if (currentPlayer === 'playerEnd') setCurrentPlayer('computerStart');
+    if (currentPlayer === 'computerEnd') setCurrentPlayer('playerStart');
   };
 
   // Show loading if we are loding.
@@ -71,14 +83,31 @@ const App = () => {
       <h1>Guess: {result.toUpperCase()}</h1>
       <p>Possible Guesses: {resultCount}</p>
 
-      <input
-        ref={inputEl}
-        autoFocus
-        type="text"
-        onChange={handleChange}
-        value={inputValue}
-        disabled={currentPlayer !== 'player'}
-      />
+      {currentPlayer === 'playerStart' && (
+        <input
+          autoFocus
+          type="text"
+          onChange={handleChange}
+          value={inputValue}
+        />
+      )}
+
+      {currentPlayer === 'playerSubmitting' && <div>Saving Guess</div>}
+
+      {currentPlayer === 'playerEnd' && (
+        <button onClick={handleEndTurn} autoFocus>
+          Computer's Turn
+        </button>
+      )}
+
+      {(currentPlayer === 'computerStart' ||
+        currentPlayer === 'computerSubmitting') && <p>Computer Thinking</p>}
+
+      {currentPlayer === 'computerEnd' && (
+        <button onClick={handleEndTurn} autoFocus>
+          Player's Turn
+        </button>
+      )}
     </div>
   );
 };
